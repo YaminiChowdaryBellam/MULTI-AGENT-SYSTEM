@@ -8,9 +8,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install Python dependencies first (cached layer — only rebuilds if requirements change)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+# Install Python dependencies first (cached layer — only rebuilds if requirements change).
+# requirements-docker.txt is the slim runtime subset — see that file's header.
+COPY requirements-docker.txt .
+RUN pip install --no-cache-dir -r requirements-docker.txt \
     && python -m spacy download en_core_web_sm
 
 # Copy source code — deliberately not `.env`: baking secrets into an image

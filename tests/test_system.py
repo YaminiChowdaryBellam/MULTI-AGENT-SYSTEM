@@ -409,6 +409,15 @@ class TestTavilyTool:
         results = search_web("obscure query xyz")
         assert results == []
 
+    @patch("tools.tavily_tool.TavilyClient")
+    def test_api_error_returns_empty_list(self, mock_client_cls):
+        """Tavily rejects some queries outright (e.g. HTTP 422) rather than
+        just returning zero results — this must degrade gracefully too."""
+        mock_client_cls.return_value.search.side_effect = requests.HTTPError("422 Client Error")
+        from tools.tavily_tool import search_web
+        results = search_web("a malformed or too-short query")
+        assert results == []
+
 
 # ---------------------------------------------------------------------------
 # Orchestrator routing

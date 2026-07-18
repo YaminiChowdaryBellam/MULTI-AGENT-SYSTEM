@@ -1,0 +1,15 @@
+# Slim runtime deps for the deployed API image only — mirrors RAG-medical-system's
+# requirements.docker.txt pattern. Excludes sentence-transformers/scikit-learn
+# (Phase 5.4's embedding_router.py — eval/benchmark-only, api.py never imports
+# it) and pytest/ruff (dev-only). See requirements.txt for the full dev set.
+groq
+requests
+tavily-python
+python-dotenv
+langgraph
+presidio-analyzer
+presidio-anonymizer
+langfuse
+fastapi
+uvicorn
+slowapi

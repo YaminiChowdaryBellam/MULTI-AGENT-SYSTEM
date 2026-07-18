@@ -17,7 +17,7 @@ from presidio_analyzer import AnalyzerEngine
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 
-from graph.llm import call_groq, extract_json
+from graph.llm import call_llm, extract_json
 
 # ── PHI / PII redaction ──────────────────────────────────────────────────────
 _NLP_CONFIG = {
@@ -83,7 +83,7 @@ def check_out_of_scope(query: str) -> tuple[bool, str]:
         "'should I stop taking my lisinopril', 'is my child's fever dangerous')\n"
         'Return ONLY JSON: {"out_of_scope": true|false, "reason": "<one sentence>"}'
     )
-    result = extract_json(call_groq(prompt)) or {}
+    result = extract_json(call_llm(prompt, tier="cheap")) or {}
     return bool(result.get("out_of_scope", False)), result.get("reason", "")
 
 

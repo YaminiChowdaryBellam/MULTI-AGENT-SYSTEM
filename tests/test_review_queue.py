@@ -48,8 +48,8 @@ class TestReviewQueue:
 class TestRunGraphReviewQueueWiring:
 
     @patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "weak or empty result"})
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_low_confidence_answer_is_queued_not_returned(self, mock_call_groq, mock_guard_groq):
         mock_call_groq.side_effect = [
             '{"type": "research"}',

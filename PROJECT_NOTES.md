@@ -17,6 +17,14 @@ A multi-agent system that answers clinical research queries by dispatching to 5 
 > Digging into the remaining 15 routing misses afterward found two gold-set bugs rather than router bugs: `R009` ("pathophysiology of migraine") was labeled `pubmed_only` while the router prompt's own canonical `rag` example was "pathophysiology of atrial fibrillation" — nearly identical phrasing, contradicting itself. `R016` ("recalls for ranitidine") expected `openfda`, but `openfda_tool.py` queries `/drug/label.json`, which has no recall data (that's a different FDA endpoint we never call) — the router's choice of `tavily` was actually more correct than the label. Both gold-set entries were relabeled to match reality, which would put accuracy at 74% on a clean re-run.
 
 > **Phase 5 (LLMOps & observability):** `graph/llm.py`'s `call_groq` and every graph node are wrapped with Langfuse `@observe` spans — per-node latency, per-agent naming on parallel `run_specialist` branches, routing/retry decisions as span metadata, and token usage + an approximate cost estimate on every Groq generation. It's a true no-op without `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY` set (a free cloud.langfuse.com account works) — `input_guard_node` and `run_graph` explicitly disable auto-capture since the raw, pre-redaction query only exists at that point, and would otherwise ship straight to Langfuse's cloud. A FastAPI service (`api.py`: `POST /query`, `GET /health`) wraps `run_graph`, mirroring RAG-medical-system's `src/api.py` pattern (slowapi rate limiting, global exception handler) — with one deliberate deviation: secrets are passed via docker-compose's `env_file` at runtime rather than `COPY .env` baked into an image layer. GitHub Actions CI (`.github/workflows/ci.yml`) runs lint (`ruff`) + unit tests + the eval harness on every PR and fails the job if routing accuracy or faithfulness regresses against the last baseline (`evals/results.py`'s `compare()`); a second workflow (`update-eval-baseline.yml`) re-runs evals after every merge to main and commits the new baseline — `GITHUB_TOKEN`-authored pushes don't retrigger `push` workflows, so this can't loop. Step 5.4's A/B experiment (`evals/ab_experiment.py`) compares the LLM router against a from-scratch embedding-similarity router (`graph/embedding_router.py`, local `sentence-transformers` model, zero API cost) on accuracy/latency/cost plus a simple total-variation-distance drift check between the two routers' agent-selection distributions.
+>
+> This project's git history (and the previous four phases' worth of "Phase N" notes above) lives entirely in this repo now — it was carved out of a much larger personal monorepo and pushed here for the first time in Phase 5, with two personal job-search-strategy files (`OPTUM_*.md`) deliberately left out via `.gitignore`.
+
+> **Phase 6 (optimization & cloud):** `graph/llm.py` gained a `call_llm(prompt, tier="cheap"|"expensive")` dispatcher — `tier="cheap"` (classify, router, confidence_gate, reflect, and `check_out_of_scope`) routes to a local quantized Ollama model (`llama3.2:3b`, Q4_K_M GGUF, ~2GB) when `TIERED_MODELS=true`, falling back to Groq otherwise; `tier="expensive"` (synthesize) always uses Groq regardless. This meant every node call site changed from `call_groq(prompt)` to `call_llm(prompt, tier=...)`, which meant every test mocking `graph.nodes.call_groq`/`graph.guardrails.call_groq` had to retarget `call_llm` — a large but mechanical rename across five test files. `evals/tiering_benchmark.py` wraps `call_groq`/`call_ollama` for the duration of a benchmark run (not the production call path) to attribute cost and latency per configuration without touching the core library. Measured on 5 e2e queries: tiering cut cost by **59.5%** but *increased* mean latency by ~7.3s/query — the quantized 3B model on local CPU is slower per call than Groq's hardware-accelerated hosted inference, a genuine trade-off rather than a pure win.
+>
+> Running the tiering benchmark for real surfaced one more bug the interactive testing throughout Phases 1-5 never hit: `tools/tavily_tool.py` had zero error handling (unlike every sibling tool), and Tavily's SDK raises its own exception classes (`tavily.errors.BadRequestError`, etc. — not subclasses of `requests.RequestException`) on a rejected query, e.g. an empty sub-query the weaker local router model occasionally produced. One malformed sub-query crashed the entire graph run. Fixed by catching Tavily's specific error classes alongside `requests.RequestException` and degrading to an empty result list, matching every other tool's pattern.
+>
+> Live deployment: Azure Container Apps, built via `az containerapp up --source .` (cloud build through Azure Container Registry Tasks — no local Docker daemon required, which mattered since it wasn't running locally). The deployed image uses `requirements-docker.txt`, a slim runtime-only subset of `requirements.txt` that excludes `sentence-transformers`/`scikit-learn` (Phase 5.4's embedding router — eval/benchmark-only, never imported by `api.py`) and `pytest`/`ruff` (dev-only), keeping the deployed image meaningfully smaller. `GROQ_API_KEY`/`TAVILY_API_KEY` were set as proper Container Apps secrets (`az containerapp secret set` + `secretref`), not plain env vars.
 
 
 
@@ -87,6 +95,8 @@ Checkpointed with an in-memory saver keyed by `thread_id`, so a session can ask 
 | HTTP API | FastAPI + `uvicorn` + `slowapi` | `POST /query`/`GET /health`, rate-limited, mirrors RAG-medical-system's API pattern |
 | CI | GitHub Actions + `ruff` | Lint + tests + eval harness on every PR; blocks merge on routing/faithfulness regression |
 | Embedding baseline | `sentence-transformers` (`all-MiniLM-L6-v2`) + `scikit-learn` | Local, zero-cost router baseline for the Step 5.4 A/B comparison |
+| Model tiering | Ollama (`llama3.2:3b`, Q4_K_M GGUF) | Free local inference for routing/guard checks — see Step 6.1's cost-vs-latency trade-off |
+| Cloud deploy | Azure Container Apps (cloud build via ACR Tasks) | Consumption-based free tier; `az containerapp up --source .` needs no local Docker daemon |
 
 ---
 
@@ -94,13 +104,13 @@ Checkpointed with an in-memory saver keyed by `thread_id`, so a session can ask 
 
 ```
 Multi-Agent-System/
-├── graph/                      # Phase 2/3/4/5: LangGraph agentic core (the default engine)
+├── graph/                      # Phase 2/3/4/5/6: LangGraph agentic core (the default engine)
 │   ├── state.py                 # GraphState schema + reducers (merge_dicts, RESET sentinel)
-│   ├── llm.py                   # Shared Groq client + call_groq() — 429 retry/backoff, Langfuse generation span, LAST_USAGE
+│   ├── llm.py                   # call_groq/call_ollama/call_llm(tier=) dispatcher — retry/backoff, Langfuse spans, LAST_USAGE
 │   ├── guardrails.py             # PHI redaction, injection heuristics, out-of-scope check, citation enforcement/coverage
 │   ├── audit.py                  # Timestamped audit entries + JSONL log read/write
 │   ├── review_queue.py           # Human-in-the-loop review queue read/write
-│   ├── nodes.py                  # input_guard, classify, router, run_specialist, confidence_gate, reflect, synthesize, human_review_gate, output_guard — all Langfuse-traced
+│   ├── nodes.py                  # input_guard, classify, router, run_specialist, confidence_gate, reflect, synthesize, human_review_gate, output_guard — all Langfuse-traced, tiered via call_llm
 │   ├── embedding_router.py       # Phase 5.4: local sentence-transformers router (A/B baseline, not wired into the production graph)
 │   └── build.py                  # Builds/compiles the StateGraph, run_graph() entry point (Langfuse-traced root span)
 ├── agents/
@@ -122,6 +132,7 @@ Multi-Agent-System/
 │   ├── judge_eval.py             # Step 4.2 — LLM-as-judge faithfulness + citation coverage (full graph, e2e)
 │   ├── results.py                # Step 4.4 — writes evals/results/*.json, compares vs previous run
 │   ├── ab_experiment.py          # Step 5.4 — LLM router vs embedding router: accuracy/latency/cost + distribution drift
+│   ├── tiering_benchmark.py      # Step 6.1 — before/after cost+latency benchmark for model tiering
 │   └── __main__.py               # CLI entry point (exits non-zero on regression — what CI gates on)
 ├── logs/
 │   ├── audit.jsonl             # Per-request audit trail (gitignored — contains raw pre-redaction query text)
@@ -133,8 +144,11 @@ Multi-Agent-System/
 ├── Dockerfile                   # Serves api.py; installs the spaCy model at build time
 ├── docker-compose.yml
 ├── main.py                     # CLI entry point — runs the graph by default, --legacy for the old orchestrator
-├── requirements.txt
+├── README.md                   # Phase 6.3: problem/architecture/impact — the public-facing landing page
+├── requirements.txt             # Full dev/eval dependency set
+├── requirements-docker.txt      # Slim runtime-only subset for the deployed image
 ├── .env                        # API keys (never commit this)
+├── .env.example                 # Sanitized template
 └── .gitignore
 ```
 

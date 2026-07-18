@@ -10,7 +10,7 @@ from graph.guardrails import (
     enforce_citations,
     redact_phi,
 )
-from graph.llm import call_groq, extract_json
+from graph.llm import call_llm, extract_json
 from graph.state import RESET, GraphState
 
 MAX_RETRIES = 1
@@ -143,7 +143,7 @@ def classify_node(state: GraphState) -> dict:
         'If B: reply with JSON {"type": "research"}\n'
         "Return ONLY the JSON. No explanation."
     )
-    result = extract_json(call_groq(prompt)) or {}
+    result = extract_json(call_llm(prompt, tier="cheap")) or {}
 
     if result.get("type") == "conversational":
         reply = result.get("reply", "I'm here to help with clinical research questions!")
@@ -183,7 +183,7 @@ def router_node(state: GraphState) -> dict:
         "Only include agents that are relevant — an empty object {} is a valid answer "
         "if none of the agents apply. No explanation, no extra text."
     )
-    parsed = extract_json(call_groq(prompt))
+    parsed = extract_json(call_llm(prompt, tier="cheap"))
     if parsed is None:
         # The model failed to return parseable JSON at all — fall back to every agent
         # as a safety net, rather than silently answering with no evidence at all.
@@ -247,7 +247,7 @@ def confidence_gate_node(state: GraphState) -> dict:
         "question. Weak, missing ('no results found'), or contradictory evidence should be 'low'.\n"
         'Return ONLY JSON: {"confidence": "high"|"low", "reason": "<one sentence>"}'
     )
-    result = extract_json(call_groq(prompt)) or {}
+    result = extract_json(call_llm(prompt, tier="cheap")) or {}
     confidence = result.get("confidence", "high")
     reason = result.get("reason", "")
     return {
@@ -280,7 +280,7 @@ def reflect_node(state: GraphState) -> dict:
         "Rewrite the sub-queries (and/or pick different agents) to close the gap. "
         "Return ONLY a JSON object mapping agent name to a focused sub-query, same format as before."
     )
-    routing = _filter_routing(extract_json(call_groq(prompt)) or {})
+    routing = _filter_routing(extract_json(call_llm(prompt, tier="cheap")) or {})
     if not routing:
         routing = state["routing"]
     new_retry_count = state.get("retry_count", 0) + 1
@@ -311,7 +311,7 @@ def synthesize_node(state: GraphState) -> dict:
         "- If no specialist supports a claim, omit the claim rather than stating it uncited.\n"
         "- Do not repeat information. Prioritize accuracy and clarity."
     )
-    answer = call_groq(prompt)
+    answer = call_llm(prompt, tier="expensive")
     return {
         "final_answer": answer,
         "history": [f"Q: {query}\nA: {answer}"],

@@ -62,7 +62,7 @@ class TestDistributionHelpers:
 
 class TestRunAbExperiment:
 
-    @patch("graph.nodes.call_groq")
+    @patch("graph.nodes.call_llm")
     def test_returns_both_variants_and_drift(self, mock_call_groq):
         mock_call_groq.return_value = '{"rag": "pathophysiology of atrial fibrillation"}'
         gold_set = [{
@@ -79,7 +79,7 @@ class TestRunAbExperiment:
         assert result["llm_router"]["accuracy"] == 1.0
         assert result["embedding_router"]["accuracy"] == 1.0
 
-    @patch("graph.nodes.call_groq")
+    @patch("graph.nodes.call_llm")
     def test_llm_variant_tracks_nonzero_cost_embedding_variant_is_free(self, mock_call_groq):
         mock_call_groq.return_value = '{"pubmed": "warfarin"}'
         gold_set = [{
@@ -87,12 +87,15 @@ class TestRunAbExperiment:
             "query": "What does the literature say about warfarin?",
             "expected_agents": ["pubmed"],
         }]
-        # graph.llm.LAST_USAGE isn't updated by a mocked call_groq (the real
+        # graph.llm.LAST_USAGE isn't updated by a mocked call_llm (the real
         # Groq response object is never constructed), so it reflects whatever
         # the last *real* call in the process set — for a clean assertion,
         # zero it out first.
         import graph.llm as llm_module
-        llm_module.LAST_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        llm_module.LAST_USAGE = {
+            "backend": None, "prompt_tokens": 0, "completion_tokens": 0,
+            "total_tokens": 0, "cost_usd": 0.0,
+        }
 
         result = run_ab_experiment(gold_set=gold_set)
         assert result["embedding_router"]["total_cost_usd"] == 0.0

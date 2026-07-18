@@ -34,7 +34,7 @@ MINI_GOLD_SET = [
 
 class TestRoutingEval:
 
-    @patch("graph.nodes.call_groq")
+    @patch("graph.nodes.call_llm")
     def test_exact_match_scores_perfectly(self, mock_call_groq):
         mock_call_groq.side_effect = [
             '{"pubmed": "warfarin"}',
@@ -46,7 +46,7 @@ class TestRoutingEval:
         # T1, T2, and T3 (a validly parsed, deliberately empty {}) all match exactly.
         assert result["routing_accuracy"] == 1.0
 
-    @patch("graph.nodes.call_groq")
+    @patch("graph.nodes.call_llm")
     def test_unparseable_response_falls_back_to_all_agents(self, mock_call_groq):
         """Genuine parse failure (not a valid {}) should still trigger the safety net."""
         mock_call_groq.return_value = "I cannot decide which agents to use."
@@ -55,7 +55,7 @@ class TestRoutingEval:
         from agents.orchestrator import AGENT_REGISTRY
         assert set(result["per_query"][0]["actual_agents"]) == set(AGENT_REGISTRY.keys())
 
-    @patch("graph.nodes.call_groq")
+    @patch("graph.nodes.call_llm")
     def test_partial_overlap_scores_between_zero_and_one(self, mock_call_groq):
         mock_call_groq.return_value = '{"pubmed": "x", "openfda": "y"}'
         gold_set = [{"id": "T1", "category": "c", "e2e": False,
@@ -66,7 +66,7 @@ class TestRoutingEval:
         assert 0 < p["precision"] < 1
         assert 0 < p["recall"] < 1
 
-    @patch("graph.nodes.call_groq")
+    @patch("graph.nodes.call_llm")
     def test_limit_truncates_gold_set(self, mock_call_groq):
         mock_call_groq.return_value = '{"pubmed": "x"}'
         result = evaluate_routing(gold_set=MINI_GOLD_SET, limit=1)
@@ -81,8 +81,8 @@ class TestJudgeEval:
 
     @patch("evals.judge_eval.call_groq")
     @patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "warfarin is an anticoagulant"})
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_faithfulness_and_coverage_are_computed(
         self, mock_nodes_groq, mock_guard_groq, mock_judge_groq
     ):
@@ -106,8 +106,8 @@ class TestJudgeEval:
 
     @patch("evals.judge_eval.call_groq")
     @patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "weak result"})
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_needs_review_is_reported(self, mock_nodes_groq, mock_guard_groq, mock_judge_groq):
         mock_nodes_groq.side_effect = [
             '{"type": "research"}',
@@ -131,9 +131,9 @@ class TestJudgeEval:
     def test_only_e2e_flagged_entries_are_evaluated(self, mock_judge_groq):
         from evals.judge_eval import evaluate_judge
         # None of MINI_GOLD_SET's non-e2e entry should ever reach the graph.
-        with patch("graph.guardrails.call_groq", return_value=IN_SCOPE), \
+        with patch("graph.guardrails.call_llm", return_value=IN_SCOPE), \
              patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "x"}), \
-             patch("graph.nodes.call_groq", side_effect=[
+             patch("graph.nodes.call_llm", side_effect=[
                  '{"type": "research"}', '{"pubmed": "x"}',
                  '{"confidence": "high", "reason": "ok"}', "Answer [PUBMED].",
                  '{"type": "research"}', '{"tavily": "x"}',

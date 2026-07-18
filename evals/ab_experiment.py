@@ -30,12 +30,7 @@ def _run_variant(entries: list[dict], route_fn, track_cost: bool) -> dict:
         latency = time.perf_counter() - start
 
         if track_cost:
-            usage = llm.LAST_USAGE
-            cost = (
-                usage["prompt_tokens"] / 1_000_000 * llm.COST_PER_1M_INPUT_TOKENS
-                + usage["completion_tokens"] / 1_000_000 * llm.COST_PER_1M_OUTPUT_TOKENS
-            )
-            total_cost += cost
+            total_cost += llm.LAST_USAGE["cost_usd"]
 
         actual = set(routing.keys())
         expected = set(entry["expected_agents"])

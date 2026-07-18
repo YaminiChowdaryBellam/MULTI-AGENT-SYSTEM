@@ -119,7 +119,7 @@ class TestAuditLog:
 
 class TestInputGuardIntegration:
 
-    @patch("graph.nodes.call_groq")
+    @patch("graph.nodes.call_llm")
     def test_prompt_injection_is_refused_before_classify(self, mock_nodes_call_groq):
         app = build_graph()
         result = app.invoke(
@@ -131,7 +131,7 @@ class TestInputGuardIntegration:
         # classify/router/etc never called an LLM — only the input guard's heuristics ran.
         mock_nodes_call_groq.assert_not_called()
 
-    @patch("graph.guardrails.call_groq")
+    @patch("graph.guardrails.call_llm")
     def test_out_of_scope_personal_treatment_is_refused(self, mock_guardrails_call_groq):
         mock_guardrails_call_groq.return_value = (
             '{"out_of_scope": true, "reason": "asks for personal treatment advice"}'
@@ -145,8 +145,8 @@ class TestInputGuardIntegration:
         assert "consult a qualified clinician" in result["final_answer"]
 
     @patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "afib findings"})
-    @patch("graph.guardrails.call_groq")
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm")
+    @patch("graph.nodes.call_llm")
     def test_phi_query_is_redacted_but_not_refused(self, mock_nodes_call_groq, mock_guardrails_call_groq):
         mock_guardrails_call_groq.return_value = '{"out_of_scope": false, "reason": ""}'
         mock_nodes_call_groq.side_effect = [
@@ -170,8 +170,8 @@ class TestInputGuardIntegration:
 class TestOutputGuardIntegration:
 
     @patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "afib findings"})
-    @patch("graph.guardrails.call_groq")
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm")
+    @patch("graph.nodes.call_llm")
     def test_disclaimer_is_appended_to_every_synthesized_answer(
         self, mock_nodes_call_groq, mock_guardrails_call_groq
     ):

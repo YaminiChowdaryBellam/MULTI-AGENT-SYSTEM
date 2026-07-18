@@ -24,8 +24,8 @@ IN_SCOPE = '{"out_of_scope": false, "reason": ""}'
 
 class TestClassifyShortCircuit:
 
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_conversational_query_skips_router_and_specialists(self, mock_call_groq, mock_guard_groq):
         mock_call_groq.return_value = '{"type": "conversational", "reply": "Hi there!"}'
         app = build_graph()
@@ -43,8 +43,8 @@ class TestFanOutAndSynthesis:
         "pubmed": lambda q: f"pubmed answer for {q}",
         "tavily": lambda q: f"tavily answer for {q}",
     })
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_research_query_dispatches_in_parallel_and_synthesizes(self, mock_call_groq, mock_guard_groq):
         mock_call_groq.side_effect = [
             '{"type": "research"}',
@@ -70,8 +70,8 @@ class TestEmptyRoutingSafety:
     confidence_gate's existing "no output" handling instead.
     """
 
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_zero_agents_selected_reaches_a_final_answer_without_crashing(
         self, mock_call_groq, mock_guard_groq
     ):
@@ -95,8 +95,8 @@ class TestEmptyRoutingSafety:
 class TestReflectionLoop:
 
     @patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "weak or empty result"})
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_low_confidence_triggers_exactly_one_retry(self, mock_call_groq, mock_guard_groq):
         mock_call_groq.side_effect = [
             '{"type": "research"}',
@@ -120,8 +120,8 @@ class TestReflectionLoop:
         assert mock_call_groq.call_count == 6
 
     @patch("graph.nodes.AGENT_REGISTRY", {"pubmed": lambda q: "strong result"})
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_high_confidence_skips_reflection(self, mock_call_groq, mock_guard_groq):
         mock_call_groq.side_effect = [
             '{"type": "research"}',
@@ -143,8 +143,8 @@ class TestSessionCheckpointing:
         "pubmed": lambda q: f"pubmed: {q}",
         "tavily": lambda q: f"tavily: {q}",
     })
-    @patch("graph.guardrails.call_groq", return_value=IN_SCOPE)
-    @patch("graph.nodes.call_groq")
+    @patch("graph.guardrails.call_llm", return_value=IN_SCOPE)
+    @patch("graph.nodes.call_llm")
     def test_followup_turn_does_not_leak_stale_agent_outputs(self, mock_call_groq, mock_guard_groq):
         mock_call_groq.side_effect = [
             # Turn 1 — routes to pubmed only
