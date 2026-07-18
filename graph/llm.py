@@ -53,7 +53,7 @@ LAST_USAGE = {"backend": None, "prompt_tokens": 0, "completion_tokens": 0, "tota
 
 
 @observe(as_type="generation", name="groq_call")
-def call_groq(prompt: str, retries: int = 3) -> str:
+def call_groq(prompt: str, retries: int = 4) -> str:
     """
     Parallel fan-out to specialist nodes means several Groq calls can land in
     the same instant, which bursts past free-tier TPM limits far more easily
@@ -61,6 +61,11 @@ def call_groq(prompt: str, retries: int = 3) -> str:
     rather than letting the whole graph run fail on a transient 429 — or, as
     first seen running in GitHub Actions' network environment rather than
     locally, a plain APIConnectionError with no rate-limit involved at all.
+
+    Base backoff is 8s, not the more typical 1s: Groq's actual 429 responses
+    on the free tier consistently report ~5-12s until the TPM window resets
+    (seen repeatedly in CI), so a fast-growing-but-small schedule just burns
+    through the retry budget without ever waiting long enough to succeed.
 
     Wrapped as a Langfuse generation — captures latency automatically and
     token usage/cost explicitly below. A no-op if LANGFUSE_PUBLIC_KEY/
@@ -98,7 +103,7 @@ def call_groq(prompt: str, retries: int = 3) -> str:
         except RETRYABLE_GROQ_ERRORS as e:
             if attempt == retries - 1:
                 raise
-            wait = 2 ** attempt
+            wait = 8 * (2 ** attempt)
             print(f"[graph.llm] Transient Groq error, retry {attempt + 1}/{retries} after {wait}s — {e}")
             time.sleep(wait)
 
