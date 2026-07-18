@@ -1,0 +1,16 @@
+groq
+requests
+tavily-python
+python-dotenv
+langgraph
+presidio-analyzer
+presidio-anonymizer
+# after installing requirements: python -m spacy download en_core_web_sm
+langfuse
+fastapi
+uvicorn
+slowapi
+sentence-transformers
+scikit-learn
+pytest
+ruff

@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+.claude/
+
+# Personal job-search strategy notes — not project documentation.
+OPTUM_PROJECT_DIRECTION.md
+OPTUM_RAG_ENHANCEMENT_PLAN.md
+
+# Audit trail contains raw (pre-redaction) query text — never commit this.
+logs/

@@ -1,0 +1,38 @@
+name: CI
+
+# Lint + unit tests + eval harness on every PR. The eval harness step compares
+# routing accuracy and faithfulness against the last baseline committed on
+# main (evals/results/*.json) and fails the job if either regressed — see
+# evals/__main__.py's exit code and evals/results.py's compare().
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit tests
+        run: pytest tests/ -q
+
+      - name: Eval harness (routing accuracy + faithfulness — blocks merge on regression)
+        run: python -m evals --judge-limit 5 --no-write

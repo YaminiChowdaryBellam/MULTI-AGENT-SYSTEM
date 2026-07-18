@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-07-18T01:10:14.107814+00:00",
+  "git_sha": "0d894a94c",
+  "routing_accuracy": 0.7,
+  "routing_precision": 0.8123,
+  "routing_recall": 0.89,
+  "routing_f1": 0.8371,
+  "faithfulness": 0.8466,
+  "citation_coverage": 1.0,
+  "review_rate": 0.0
+}

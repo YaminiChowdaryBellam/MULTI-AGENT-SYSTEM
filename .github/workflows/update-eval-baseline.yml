@@ -1,0 +1,54 @@
+name: Update Eval Baseline
+
+# Runs the eval harness after every merge to main and commits the new
+# results as the baseline future PRs' CI runs compare against (ci.yml runs
+# with --no-write and only ever compares — this is the only workflow that
+# writes evals/results/*.json). Commits made with the built-in GITHUB_TOKEN
+# don't trigger further `push`-based workflow runs, so this can't loop.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  update-baseline:
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Unit tests
+        run: pytest tests/ -q
+
+      - name: Run eval harness and write new baseline
+        run: python -m evals --judge-limit 10
+
+      - name: Commit updated baseline
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add evals/results/
+          if git diff --staged --quiet; then
+            echo "No baseline changes to commit"
+          else
+            git commit -m "chore: update eval baseline [skip ci]"
+            git push
+          fi

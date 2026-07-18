@@ -1,0 +1,17 @@
+services:
+
+  # ── FastAPI clinical research assistant ─────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clinical-research-assistant-api
+    ports:
+      - "8001:8001"   # 8001, not 8000 — RAG-medical-system's own API already uses 8000
+    env_file:
+      - .env
+    # If RAG-medical-system is also running (its own separate compose project)
+    # and you want this container to reach it, point RAG_SERVICE_URL in .env at
+    # http://host.docker.internal:8000 (Docker Desktop) rather than localhost —
+    # localhost inside this container refers to the container itself, not the host.
+    restart: unless-stopped
