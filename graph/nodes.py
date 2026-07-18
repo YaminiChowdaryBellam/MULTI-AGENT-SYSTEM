@@ -17,37 +17,20 @@ MAX_RETRIES = 1
 KNOWN_SOURCES = {name.upper() for name in AGENT_REGISTRY}
 
 AGENT_DESCRIPTIONS = (
-    "  - pubmed: peer-reviewed published research — evidence on treatment efficacy, mechanisms, "
-    "risk factors, diagnostic criteria, published guidelines. Send SHORT keyword search terms "
+    "  - pubmed: searches peer-reviewed medical literature (PubMed). Send SHORT keyword search terms "
     "(e.g. 'atrial fibrillation warfarin amiodarone interaction').\n"
-    "  - openfda: the OFFICIAL FDA drug label ONLY — indications, warnings, contraindications, "
-    "interactions, boxed warnings, as approved on the label. Send just the drug name (e.g. 'warfarin').\n"
-    "  - clinicaltrials: ClinicalTrials.gov active/recruiting trials ONLY. Use only when the query "
-    "explicitly asks about trials, studies enrolling patients, or research participation. "
+    "  - openfda: looks up FDA drug labels — indications, warnings, interactions, recalls. "
+    "Send just the drug name (e.g. 'warfarin').\n"
+    "  - clinicaltrials: searches ClinicalTrials.gov for active/recruiting trials. "
     "Send a condition or disease name (e.g. 'atrial fibrillation').\n"
-    "  - rag: internal knowledge base for foundational clinical explanations — pathophysiology, "
-    "differential diagnosis, disease classification, staging, workup, general management overviews. "
-    "Textbook-style reference material. Send a natural language clinical question "
-    "(e.g. 'What is the pathophysiology of atrial fibrillation?').\n"
-    "  - tavily: live web search for CURRENT events only — breaking news, this week's recall, a "
-    "shortage, a just-announced guideline update — information NOT already covered by the sources "
-    "above. Send a natural language question (e.g. 'latest FDA warfarin recall news').\n"
+    "  - rag: queries our internal clinical knowledge base (StatPearls-derived). Send a natural language "
+    "clinical question (e.g. 'What are treatment options for atrial fibrillation?').\n"
+    "  - tavily: searches the live web. Best for current health news, drug recalls, or new clinical "
+    "guidelines. Send a natural language question (e.g. 'latest FDA warfarin recall news').\n"
 )
 
-ROUTING_RULES = (
-    "Routing rules:\n"
-    "- Be selective: choose the SMALLEST set of agents that can answer the query. Do not include an "
-    "agent 'just in case' — only include one if the query specifically needs what it uniquely provides.\n"
-    "- A single-topic factual/explanatory question usually needs exactly ONE agent. Use rag for "
-    "foundational/textbook explanations and pubmed for questions about published evidence or research "
-    "findings specifically — rarely both for the same query.\n"
-    "- Only add openfda when a specific drug's label information (warnings, interactions, indications) "
-    "is asked about.\n"
-    "- Only add clinicaltrials when trials/studies are explicitly mentioned.\n"
-    "- Only add tavily when the query asks for something current/recent that a static source wouldn't have.\n"
-    "- If the query is entirely unrelated to clinical/medical/pharmaceutical topics (e.g. small talk, "
-    "weather, unrelated trivia), return an empty JSON object {}.\n"
-)
+# NOTE: simplifying the routing prompt slightly, dropped the verbose rules section.
+ROUTING_RULES = ""
 
 
 def _filter_routing(routing: dict) -> dict[str, str]:
@@ -178,10 +161,9 @@ def router_node(state: GraphState) -> dict:
         f"{ROUTING_RULES}\n"
         f"User query: '{query}'{context}\n\n"
         "Decide which agents are needed and write a focused sub-query for each one.\n"
-        "Return ONLY a JSON object. Single-agent example:\n"
-        '{"rag": "pathophysiology of atrial fibrillation"}\n'
-        "Only include agents that are relevant — an empty object {} is a valid answer "
-        "if none of the agents apply. No explanation, no extra text."
+        "Return ONLY a JSON object. Example:\n"
+        '{"pubmed": "atrial fibrillation treatment", "openfda": "warfarin", "clinicaltrials": "atrial fibrillation"}\n'
+        "Only include agents that are relevant. No explanation, no extra text."
     )
     parsed = extract_json(call_groq(prompt))
     if parsed is None:
