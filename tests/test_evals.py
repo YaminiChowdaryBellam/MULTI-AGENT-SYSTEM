@@ -186,6 +186,33 @@ class TestResultsTracking:
     def test_compare_with_no_previous_returns_empty(self):
         assert compare({"routing_accuracy": 0.8}, None) == {}
 
+    def test_judge_metric_within_wide_tolerance_is_not_flagged(self):
+        """
+        A 10-swing on a small judge-eval sample (e.g. 1 case out of 10
+        flipping) must not read as a regression — this is the exact false
+        positive that kept blocking update-eval-baseline.yml.
+        """
+        current = {"faithfulness": 0.80, "citation_coverage": 0.90, "review_rate": 0.10}
+        previous = {"faithfulness": 0.90, "citation_coverage": 1.00, "review_rate": 0.00}
+        comparison = compare(current, previous)
+        assert comparison["faithfulness"]["regressed"] is False
+        assert comparison["citation_coverage"]["regressed"] is False
+        assert comparison["review_rate"]["regressed"] is False
+
+    def test_judge_metric_beyond_wide_tolerance_is_still_flagged(self):
+        current = {"faithfulness": 0.50}
+        previous = {"faithfulness": 0.90}
+        comparison = compare(current, previous)
+        assert comparison["faithfulness"]["regressed"] is True
+
+    def test_routing_metric_keeps_tight_default_tolerance(self):
+        """routing_* metrics are computed over the full 50-query gold set —
+        they should NOT get the judge metrics' wide tolerance."""
+        current = {"routing_accuracy": 0.75}
+        previous = {"routing_accuracy": 0.80}
+        comparison = compare(current, previous)
+        assert comparison["routing_accuracy"]["regressed"] is True
+
 
 # ---------------------------------------------------------------------------
 # CLI exit code (this is what makes CI actually block a regressing PR)

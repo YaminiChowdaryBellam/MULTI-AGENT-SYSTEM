@@ -39,7 +39,11 @@ jobs:
         run: pytest tests/ -q
 
       - name: Run eval harness and write new baseline
-        run: python -m evals --judge-limit 10
+        # No --judge-limit here (unlike ci.yml's PR-speed-bounded 5) — this only
+        # runs once per merge, so it can afford the full ~24 e2e-flagged sample,
+        # which combined with evals/results.py's wider judge-metric tolerance
+        # keeps single-case sampling noise from tripping the regression gate.
+        run: python -m evals
 
       - name: Commit updated baseline
         run: |
