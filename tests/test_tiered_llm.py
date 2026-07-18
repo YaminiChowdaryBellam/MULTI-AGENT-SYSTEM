@@ -6,13 +6,30 @@ cheap/expensive dispatch, and call_ollama's request handling + usage tracking.
 import os
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 import requests
+from groq import APIConnectionError, BadRequestError, RateLimitError
 
 os.environ.setdefault("GROQ_API_KEY", "test-key")
 os.environ.setdefault("TAVILY_API_KEY", "test-key")
 
 import graph.llm as llm  # noqa: E402
+
+
+def _groq_response(content: str, prompt_tokens=10, completion_tokens=5) -> MagicMock:
+    msg = MagicMock()
+    msg.content = content
+    choice = MagicMock()
+    choice.message = msg
+    resp = MagicMock()
+    resp.choices = [choice]
+    usage = MagicMock()
+    usage.prompt_tokens = prompt_tokens
+    usage.completion_tokens = completion_tokens
+    usage.total_tokens = prompt_tokens + completion_tokens
+    resp.usage = usage
+    return resp
 
 
 class TestCallLlmDispatch:
@@ -91,3 +108,48 @@ class TestCallOllama:
         with pytest.raises(requests.RequestException):
             llm.call_ollama("prompt", retries=2)
         assert mock_post.call_count == 2
+
+
+class TestCallGroqRetry:
+    """
+    First caught running in GitHub Actions (not locally): a plain
+    groq.APIConnectionError with no rate limit involved crashed the eval
+    harness, because call_groq only retried RateLimitError. Broadened to
+    RETRYABLE_GROQ_ERRORS — verify each transient type is actually retried,
+    and that a genuine client error (bad request) is NOT retried.
+    """
+
+    @patch("graph.llm.time.sleep")
+    @patch("graph.llm._client")
+    def test_retries_on_rate_limit_error(self, mock_client, mock_sleep):
+        response = httpx.Response(429, request=httpx.Request("POST", "https://api.groq.com"))
+        mock_client.chat.completions.create.side_effect = [
+            RateLimitError("rate limited", response=response, body=None),
+            _groq_response("ok"),
+        ]
+        result = llm.call_groq("prompt")
+        assert result == "ok"
+        assert mock_client.chat.completions.create.call_count == 2
+
+    @patch("graph.llm.time.sleep")
+    @patch("graph.llm._client")
+    def test_retries_on_connection_error(self, mock_client, mock_sleep):
+        request = httpx.Request("POST", "https://api.groq.com")
+        mock_client.chat.completions.create.side_effect = [
+            APIConnectionError(request=request),
+            _groq_response("ok"),
+        ]
+        result = llm.call_groq("prompt")
+        assert result == "ok"
+        assert mock_client.chat.completions.create.call_count == 2
+
+    @patch("graph.llm.time.sleep")
+    @patch("graph.llm._client")
+    def test_does_not_retry_non_transient_errors(self, mock_client, mock_sleep):
+        response = httpx.Response(400, request=httpx.Request("POST", "https://api.groq.com"))
+        mock_client.chat.completions.create.side_effect = BadRequestError(
+            "bad request", response=response, body=None
+        )
+        with pytest.raises(BadRequestError):
+            llm.call_groq("prompt")
+        assert mock_client.chat.completions.create.call_count == 1

@@ -5,11 +5,15 @@ import re
 import time
 
 import requests
-from groq import Groq, RateLimitError
+from groq import APIConnectionError, APITimeoutError, Groq, InternalServerError, RateLimitError
 from langfuse import get_client, observe
 
 _client = Groq(api_key=os.environ["GROQ_API_KEY"])
 GROQ_MODEL = "llama-3.1-8b-instant"
+
+# Transient failure modes worth retrying — NOT BadRequestError/AuthenticationError/
+# etc., where the same request would just fail again identically.
+RETRYABLE_GROQ_ERRORS = (RateLimitError, APIConnectionError, APITimeoutError, InternalServerError)
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:3b")
@@ -54,7 +58,9 @@ def call_groq(prompt: str, retries: int = 3) -> str:
     Parallel fan-out to specialist nodes means several Groq calls can land in
     the same instant, which bursts past free-tier TPM limits far more easily
     than the old orchestrator's sequential for-loop did. Retry with backoff
-    rather than letting the whole graph run fail on a transient 429.
+    rather than letting the whole graph run fail on a transient 429 — or, as
+    first seen running in GitHub Actions' network environment rather than
+    locally, a plain APIConnectionError with no rate-limit involved at all.
 
     Wrapped as a Langfuse generation — captures latency automatically and
     token usage/cost explicitly below. A no-op if LANGFUSE_PUBLIC_KEY/
@@ -89,11 +95,11 @@ def call_groq(prompt: str, retries: int = 3) -> str:
                     cost_details={"total": round(cost, 8)},
                 )
             return response.choices[0].message.content.strip()
-        except RateLimitError as e:
+        except RETRYABLE_GROQ_ERRORS as e:
             if attempt == retries - 1:
                 raise
             wait = 2 ** attempt
-            print(f"[graph.llm] Rate limited by Groq, retry {attempt + 1}/{retries} after {wait}s — {e}")
+            print(f"[graph.llm] Transient Groq error, retry {attempt + 1}/{retries} after {wait}s — {e}")
             time.sleep(wait)
 
 
